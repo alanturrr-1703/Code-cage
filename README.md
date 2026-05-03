@@ -155,7 +155,7 @@ By default Code-cage runs user code natively — it has process isolation (each 
 
 | Language | Image |
 |---|---|
-| Java | `openjdk:21-slim` |
+| Java | `eclipse-temurin:21-jdk-jammy` |
 | Python | `python:3.12-slim` |
 | C++ | `gcc:13` |
 | JavaScript | `node:20-slim` |
