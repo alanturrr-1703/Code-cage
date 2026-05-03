@@ -1,0 +1,50 @@
+plugins {
+    id 'java'
+    id 'application'
+    id 'org.openjfx.javafxplugin' version '0.1.0'
+}
+
+group = 'com.codecage'
+version = '1.0-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+javafx {
+    version = "21"
+    modules = ['javafx.controls', 'javafx.fxml', 'javafx.web', 'javafx.graphics']
+}
+
+dependencies {
+    implementation 'org.fxmisc.richtext:richtextfx:0.11.2'
+    implementation 'org.fxmisc.flowless:flowless:0.7.0'
+    implementation 'org.reactfx:reactfx:2.0-M5'
+}
+
+application {
+    mainClass = 'com.codecage.Main'
+}
+
+jar {
+    manifest {
+        attributes 'Main-Class': 'com.codecage.Main'
+    }
+}
+
+sourceSets {
+    main {
+        java {
+            srcDirs = ['src/main/java']
+        }
+        resources {
+            srcDirs = ['src/main/resources']
+        }
+    }
+}
