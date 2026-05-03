@@ -150,7 +150,6 @@ By default Code-cage runs user code natively — it has process isolation (each 
 | Fork bombs | `--pids-limit 50` — container is killed if process count exceeds 50 |
 | Memory exhaustion | `--memory` + `--memory-swap` set to the configured limit, no swap |
 | CPU exhaustion | `--cpus 1.0` — hard cap at one logical core |
-| Privilege escalation | `--no-new-privileges` — setuid/setgid are blocked |
 
 ### Docker images used
 
@@ -179,7 +178,7 @@ Run clicked (sandbox ON)
            └─ builds: docker run --rm -i --network none --read-only
                        --tmpfs /tmp:rw,exec,size=128m
                        --memory {limit}m --memory-swap {limit}m
-                       --cpus 1.0 --pids-limit 50 --no-new-privileges
+                       --cpus 1.0 --pids-limit 50
                        -w /tmp -v <workDir>:/sandbox:ro
                        <image> <language-command>
            └─ stdout/stderr streamed back through existing callbacks
