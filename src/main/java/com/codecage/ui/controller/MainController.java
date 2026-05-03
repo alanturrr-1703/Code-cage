@@ -1,10 +1,16 @@
 package com.codecage.ui.controller;
 
 import com.codecage.model.*;
+import com.codecage.sandbox.DockerAvailability;
+import com.codecage.sandbox.DockerImagePuller;
+import com.codecage.sandbox.SandboxType;
 import com.codecage.service.ExecutionService;
 import com.codecage.service.ProcessManager;
 import com.codecage.ui.component.ProcessListCell;
 import com.codecage.ui.component.SyntaxHighlighter;
+import java.time.Duration;
+import java.util.concurrent.*;
+import java.util.concurrent.ExecutorService;
 import javafx.application.Platform;
 import javafx.beans.value.ChangeListener;
 import javafx.collections.ListChangeListener;
@@ -17,10 +23,6 @@ import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.LineNumberFactory;
-
-import java.time.Duration;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.*;
 
 public class MainController {
 
@@ -45,6 +47,7 @@ public class MainController {
     private Spinner<Integer> memLimitSpinner;
     private Button runBtn;
     private Button killBtn;
+    private ToggleButton sandboxToggle;
     private int tabCounter = 1;
 
     // ── Listeners we need to un-bind ─────────────────────────────────────────
@@ -90,11 +93,26 @@ public class MainController {
         memLimitSpinner.getStyleClass().add("toolbar-spinner");
 
         // Buttons
-        Button newTabBtn  = styledBtn("+ New Tab",  "btn-new");
-        runBtn            = styledBtn("▶  Run",      "btn-run");
-        killBtn           = styledBtn("■  Kill",     "btn-kill");
-        Button stopAllBtn = styledBtn("⏹ Stop All",  "btn-stop");
-        Button clearBtn   = styledBtn("🗑 Clear",    "btn-clear");
+        Button newTabBtn = styledBtn("+ New Tab", "btn-new");
+        runBtn = styledBtn("▶  Run", "btn-run");
+        killBtn = styledBtn("■  Kill", "btn-kill");
+        Button stopAllBtn = styledBtn("⏹ Stop All", "btn-stop");
+        Button clearBtn = styledBtn("🗑 Clear", "btn-clear");
+
+        // Sandbox toggle
+        sandboxToggle = new ToggleButton(SandboxType.NONE.getLabel());
+        sandboxToggle.getStyleClass().addAll("toolbar-btn", "btn-sandbox-off");
+        sandboxToggle.setDisable(!DockerAvailability.isAvailable());
+        if (!DockerAvailability.isAvailable()) {
+            Tooltip tip = new Tooltip(
+                "Docker daemon not found — sandbox unavailable"
+            );
+            Tooltip.install(sandboxToggle, tip);
+            sandboxToggle.setText("🐳 No Docker");
+        }
+        sandboxToggle
+            .selectedProperty()
+            .addListener((obs, wasOn, isOn) -> handleSandboxToggle(isOn));
 
         newTabBtn.setOnAction(e -> addEditorTab(null));
         runBtn.setOnAction(e -> handleRun());
@@ -103,24 +121,39 @@ public class MainController {
         clearBtn.setOnAction(e -> processManager.clearCompleted());
 
         // Language change → update current editor template
-        langCombo.valueProperty().addListener((obs, old, lang) -> {
-            CodeArea ca = getCurrentCodeArea();
-            if (ca != null && ca.getText().isBlank()) {
-                ca.replaceText(lang.getTemplate());
-            }
-            updateHighlighting(ca, lang.getId());
-        });
+        langCombo
+            .valueProperty()
+            .addListener((obs, old, lang) -> {
+                CodeArea ca = getCurrentCodeArea();
+                if (ca != null && ca.getText().isBlank()) {
+                    ca.replaceText(lang.getTemplate());
+                }
+                updateHighlighting(ca, lang.getId());
+            });
 
         Separator sep1 = new Separator(Orientation.VERTICAL);
         Separator sep2 = new Separator(Orientation.VERTICAL);
+        Separator sep3 = new Separator(Orientation.VERTICAL);
 
-        HBox bar = new HBox(8,
-                newTabBtn, sep1,
-                new Label("Lang:"), langCombo,
-                new Label("⏱"), timeLimitSpinner, new Label("ms"),
-                new Label("💾"), memLimitSpinner, new Label("MB"),
-                sep2,
-                runBtn, killBtn, stopAllBtn, clearBtn
+        HBox bar = new HBox(
+            8,
+            newTabBtn,
+            sep1,
+            new Label("Lang:"),
+            langCombo,
+            new Label("⏱"),
+            timeLimitSpinner,
+            new Label("ms"),
+            new Label("💾"),
+            memLimitSpinner,
+            new Label("MB"),
+            sep2,
+            runBtn,
+            killBtn,
+            stopAllBtn,
+            clearBtn,
+            sep3,
+            sandboxToggle
         );
         bar.setAlignment(Pos.CENTER_LEFT);
         bar.setPadding(new Insets(6, 12, 6, 12));
@@ -161,19 +194,30 @@ public class MainController {
         SplitPane.setResizableWithParent(sidebar, false);
 
         // Bind selection: show selected record's output
-        processListView.getSelectionModel().selectedItemProperty()
-                .addListener((obs, old, rec) -> bindRecord(rec));
+        processListView
+            .getSelectionModel()
+            .selectedItemProperty()
+            .addListener((obs, old, rec) -> bindRecord(rec));
 
         // Auto-select new records
-        processManager.getRecords().addListener((ListChangeListener<ProcessRecord>) c -> {
-            while (c.next()) {
-                if (c.wasAdded()) {
-                    ProcessRecord latest = c.getAddedSubList().get(c.getAddedSubList().size() - 1);
-                    Platform.runLater(() ->
-                            processListView.getSelectionModel().select(latest));
+        processManager
+            .getRecords()
+            .addListener(
+                (ListChangeListener<ProcessRecord>) c -> {
+                    while (c.next()) {
+                        if (c.wasAdded()) {
+                            ProcessRecord latest = c
+                                .getAddedSubList()
+                                .get(c.getAddedSubList().size() - 1);
+                            Platform.runLater(() ->
+                                processListView
+                                    .getSelectionModel()
+                                    .select(latest)
+                            );
+                        }
+                    }
                 }
-            }
-        });
+            );
 
         return mainSplit;
     }
@@ -211,17 +255,18 @@ public class MainController {
         Label exitCodeLabel = new Label("—");
         exitCodeLabel.getStyleClass().add("info-value");
 
-        VBox infoBox = new VBox(8,
-                labeledRow("Status :", statusInfoLabel),
-                labeledRow("Time   :", timeBadge),
-                labeledRow("Exit   :", exitCodeLabel)
+        VBox infoBox = new VBox(
+            8,
+            labeledRow("Status :", statusInfoLabel),
+            labeledRow("Time   :", timeBadge),
+            labeledRow("Exit   :", exitCodeLabel)
         );
         infoBox.setPadding(new Insets(12));
         infoBox.getStyleClass().add("info-pane");
 
-        Tab outTab  = closableTab("Output", outputArea);
-        Tab errTab  = closableTab("Errors", errorArea);
-        Tab infoTab = closableTab("Info",   infoBox);
+        Tab outTab = closableTab("Output", outputArea);
+        Tab errTab = closableTab("Errors", errorArea);
+        Tab infoTab = closableTab("Info", infoBox);
 
         TabPane resultTabs = new TabPane(outTab, errTab, infoTab);
         resultTabs.getStyleClass().add("result-tabs");
@@ -253,23 +298,28 @@ public class MainController {
     //  Editor tab management
     // =========================================================================
     private void addEditorTab(String code) {
-        Language lang = langCombo != null ? langCombo.getValue() : Language.PYTHON;
+        Language lang =
+            langCombo != null ? langCombo.getValue() : Language.PYTHON;
 
         CodeArea codeArea = new CodeArea();
         codeArea.setParagraphGraphicFactory(LineNumberFactory.get(codeArea));
         codeArea.getStyleClass().add("code-area");
         codeArea.setWrapText(false);
 
-        String initialCode = (code != null && !code.isBlank()) ? code : lang.getTemplate();
+        String initialCode = (code != null && !code.isBlank())
+            ? code
+            : lang.getTemplate();
         codeArea.replaceText(initialCode);
 
         // Live syntax highlighting (debounced)
-        codeArea.multiPlainChanges()
-                .successionEnds(Duration.ofMillis(120))
-                .subscribe(ignore -> {
-                    Language cur = langCombo != null ? langCombo.getValue() : Language.PYTHON;
-                    updateHighlighting(codeArea, cur.getId());
-                });
+        codeArea
+            .multiPlainChanges()
+            .successionEnds(Duration.ofMillis(120))
+            .subscribe(ignore -> {
+                Language cur =
+                    langCombo != null ? langCombo.getValue() : Language.PYTHON;
+                updateHighlighting(codeArea, cur.getId());
+            });
 
         updateHighlighting(codeArea, lang.getId());
 
@@ -282,8 +332,10 @@ public class MainController {
     }
 
     private CodeArea getCurrentCodeArea() {
-        Tab t = editorTabPane != null
-                ? editorTabPane.getSelectionModel().getSelectedItem() : null;
+        Tab t =
+            editorTabPane != null
+                ? editorTabPane.getSelectionModel().getSelectedItem()
+                : null;
         if (t == null) return null;
         Node content = t.getContent();
         return (content instanceof CodeArea ca) ? ca : null;
@@ -292,8 +344,10 @@ public class MainController {
     private void updateHighlighting(CodeArea ca, String langId) {
         if (ca == null) return;
         try {
-            ca.setStyleSpans(0,
-                    SyntaxHighlighter.computeHighlighting(langId, ca.getText()));
+            ca.setStyleSpans(
+                0,
+                SyntaxHighlighter.computeHighlighting(langId, ca.getText())
+            );
         } catch (Exception ignored) {}
     }
 
@@ -308,33 +362,64 @@ public class MainController {
         }
 
         Language lang = langCombo.getValue();
-        String code   = ca.getText();
-        String input  = inputArea.getText();
+        String code = ca.getText();
+        String input = inputArea.getText();
 
         RunRequest req = RunRequest.builder()
-                .code(code)
-                .language(lang.getId())
-                .timeLimitMs(timeLimitSpinner.getValue())
-                .memoryLimitMb(memLimitSpinner.getValue())
-                .input(input)
-                .build();
+            .code(code)
+            .language(lang.getId())
+            .timeLimitMs(timeLimitSpinner.getValue())
+            .memoryLimitMb(memLimitSpinner.getValue())
+            .input(input)
+            .sandboxed(sandboxToggle != null && sandboxToggle.isSelected())
+            .build();
 
         ProcessRecord rec = processManager.createRecord(lang.getId(), code);
 
         ExecutionService svc = new ExecutionService(req, rec);
         svc.setExecutor(bgPool);
-        svc.setOnSucceeded(e -> setStatus(
-                "Run #" + rec.getId() + " finished — " + rec.getStatus().getLabel()
-                + " in " + String.format("%.2fs", rec.getExecutionTimeMs() / 1000.0)));
-        svc.setOnFailed(e -> setStatus("Run #" + rec.getId() + " failed unexpectedly."));
+        svc.setOnSucceeded(e ->
+            setStatus(
+                "Run #" +
+                    rec.getId() +
+                    " finished — " +
+                    rec.getStatus().getLabel() +
+                    " in " +
+                    String.format("%.2fs", rec.getExecutionTimeMs() / 1000.0)
+            )
+        );
+        svc.setOnFailed(e ->
+            setStatus("Run #" + rec.getId() + " failed unexpectedly.")
+        );
         svc.start();
 
-        setStatus("Running #" + rec.getId() + " (" + lang.getDisplayName() + ")…");
+        setStatus(
+            "Running #" + rec.getId() + " (" + lang.getDisplayName() + ")…"
+        );
     }
 
     private void handleKillSelected() {
-        ProcessRecord rec = processListView.getSelectionModel().getSelectedItem();
+        ProcessRecord rec = processListView
+            .getSelectionModel()
+            .getSelectedItem();
         if (rec != null) rec.kill();
+    }
+
+    private void handleSandboxToggle(boolean enabled) {
+        if (enabled) {
+            sandboxToggle.setText(SandboxType.DOCKER.getLabel());
+            sandboxToggle.getStyleClass().removeAll("btn-sandbox-off");
+            sandboxToggle.getStyleClass().add("btn-sandbox-on");
+            setStatus(
+                "🔒 Sandbox ON — pre-pulling Docker images in background…"
+            );
+            DockerImagePuller.pullAllAsync(msg -> setStatus(msg));
+        } else {
+            sandboxToggle.setText(SandboxType.NONE.getLabel());
+            sandboxToggle.getStyleClass().removeAll("btn-sandbox-on");
+            sandboxToggle.getStyleClass().add("btn-sandbox-off");
+            setStatus("🔓 Sandbox OFF — running natively");
+        }
     }
 
     // =========================================================================
@@ -343,9 +428,15 @@ public class MainController {
     private void bindRecord(ProcessRecord rec) {
         // Remove old listeners from previously bound record
         if (boundRecord != null) {
-            if (outputListener != null) boundRecord.outputProperty().removeListener(outputListener);
-            if (errorListener  != null) boundRecord.errorProperty().removeListener(errorListener);
-            if (statusListener != null) boundRecord.statusProperty().removeListener(statusListener);
+            if (outputListener != null) boundRecord
+                .outputProperty()
+                .removeListener(outputListener);
+            if (errorListener != null) boundRecord
+                .errorProperty()
+                .removeListener(errorListener);
+            if (statusListener != null) boundRecord
+                .statusProperty()
+                .removeListener(statusListener);
         }
         boundRecord = rec;
 
@@ -353,7 +444,7 @@ public class MainController {
             outputArea.clear();
             errorArea.clear();
             if (statusLabel != null) statusLabel.setText("Ready");
-            if (timeBadge   != null) timeBadge.setText("—");
+            if (timeBadge != null) timeBadge.setText("—");
             return;
         }
 
@@ -363,30 +454,41 @@ public class MainController {
         updateStatusBadge(rec.getStatus());
         if (timeBadge != null) {
             long ms = rec.getExecutionTimeMs();
-            timeBadge.setText(ms > 0
+            timeBadge.setText(
+                ms > 0
                     ? String.format("%.3f s", ms / 1000.0)
-                    : (rec.getStatus() == ExecutionStatus.RUNNING ? "running…" : "—"));
+                    : (rec.getStatus() == ExecutionStatus.RUNNING
+                          ? "running…"
+                          : "—")
+            );
         }
 
         // Wire up live-update listeners
-        outputListener = (obs, o, n) -> Platform.runLater(() -> {
-            outputArea.setText(n);
-            outputArea.setScrollTop(Double.MAX_VALUE);
-        });
-        errorListener = (obs, o, n) -> Platform.runLater(() -> {
-            errorArea.setText(n);
-            errorArea.setScrollTop(Double.MAX_VALUE);
-        });
-        statusListener = (obs, o, n) -> Platform.runLater(() -> updateStatusBadge(n));
+        outputListener = (obs, o, n) ->
+            Platform.runLater(() -> {
+                outputArea.setText(n);
+                outputArea.setScrollTop(Double.MAX_VALUE);
+            });
+        errorListener = (obs, o, n) ->
+            Platform.runLater(() -> {
+                errorArea.setText(n);
+                errorArea.setScrollTop(Double.MAX_VALUE);
+            });
+        statusListener = (obs, o, n) ->
+            Platform.runLater(() -> updateStatusBadge(n));
 
         rec.outputProperty().addListener(outputListener);
         rec.errorProperty().addListener(errorListener);
         rec.statusProperty().addListener(statusListener);
-        rec.executionTimeMsProperty().addListener((obs, o, n) ->
+        rec
+            .executionTimeMsProperty()
+            .addListener((obs, o, n) ->
                 Platform.runLater(() -> {
-                    if (timeBadge != null)
-                        timeBadge.setText(String.format("%.3f s", n.longValue() / 1000.0));
-                }));
+                    if (timeBadge != null) timeBadge.setText(
+                        String.format("%.3f s", n.longValue() / 1000.0)
+                    );
+                })
+            );
     }
 
     private void updateStatusBadge(ExecutionStatus status) {

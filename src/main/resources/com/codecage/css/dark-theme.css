@@ -93,6 +93,37 @@
     -fx-background-color: #1f4a8c;
 }
 
+/* ===== Sandbox Toggle ================================================== */
+.btn-sandbox-off {
+    -fx-background-color: #2d2d2d;
+    -fx-text-fill: #888888;
+    -fx-border-color: #555;
+    -fx-font-weight: bold;
+}
+
+.btn-sandbox-off:hover {
+    -fx-background-color: #3c3c3c;
+    -fx-text-fill: #aaaaaa;
+}
+
+.btn-sandbox-on {
+    -fx-background-color: #1a4a3a;
+    -fx-text-fill: #4ec9b0;
+    -fx-border-color: #2d8c70;
+    -fx-font-weight: bold;
+    -fx-effect: dropshadow(gaussian, #4ec9b0, 6, 0.4, 0, 0);
+}
+
+.btn-sandbox-on:hover {
+    -fx-background-color: #1f5a47;
+}
+
+.toggle-button:selected {
+    -fx-background-color: #1a4a3a;
+    -fx-text-fill: #4ec9b0;
+    -fx-border-color: #2d8c70;
+}
+
 /* ===== Combo / Spinner ================================================= */
 .toolbar-combo,
 .toolbar-spinner {

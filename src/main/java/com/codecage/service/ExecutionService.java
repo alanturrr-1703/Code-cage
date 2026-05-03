@@ -10,6 +10,7 @@ import javafx.concurrent.Service;
 import javafx.concurrent.Task;
 
 public class ExecutionService extends Service<ExecutionResult> {
+
     private final RunRequest request;
     private final ProcessRecord record;
 
@@ -25,16 +26,21 @@ public class ExecutionService extends Service<ExecutionResult> {
             protected ExecutionResult call() {
                 record.setStatus(ExecutionStatus.RUNNING);
                 try {
-                    CodeExecutor executor = ExecutorFactory.getExecutor(request.getLanguage());
+                    CodeExecutor executor = ExecutorFactory.getExecutor(
+                        request.getLanguage(),
+                        request.isSandboxed()
+                    );
                     ExecutionResult result = executor.execute(
-                            request,
-                            chunk -> record.appendOutput(chunk),
-                            chunk -> record.appendError(chunk)
+                        request,
+                        chunk -> record.appendOutput(chunk),
+                        chunk -> record.appendError(chunk)
                     );
                     record.applyResult(result);
                     return result;
                 } catch (Exception e) {
-                    ExecutionResult err = ExecutionResult.internalError(e.getMessage());
+                    ExecutionResult err = ExecutionResult.internalError(
+                        e.getMessage()
+                    );
                     record.applyResult(err);
                     return err;
                 }

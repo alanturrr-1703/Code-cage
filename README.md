@@ -136,6 +136,62 @@ That's it. Gradle downloads all dependencies (JavaFX 21, RichTextFX 0.11.2) auto
 
 ---
 
+## Sandbox mode (Docker)
+
+By default Code-cage runs user code natively — it has process isolation (each run is a separate OS process) but **no filesystem, network, or fork-bomb protection**. Toggle **🔒 Docker** in the toolbar to enable full sandboxing.
+
+### What gets locked down
+
+| Threat | Mitigation |
+|---|---|
+| Network access | `--network none` — all TCP/UDP blocked at the kernel level |
+| Host filesystem writes | `--read-only` root FS + bind-mount source as `:ro` |
+| Writes outside /tmp | Only `/tmp` is writable (tmpfs, 128 MB cap, auto-deleted on exit) |
+| Fork bombs | `--pids-limit 50` — container is killed if process count exceeds 50 |
+| Memory exhaustion | `--memory` + `--memory-swap` set to the configured limit, no swap |
+| CPU exhaustion | `--cpus 1.0` — hard cap at one logical core |
+| Privilege escalation | `--no-new-privileges` — setuid/setgid are blocked |
+
+### Docker images used
+
+| Language | Image |
+|---|---|
+| Java | `openjdk:21-slim` |
+| Python | `python:3.12-slim` |
+| C++ | `gcc:13` |
+| JavaScript | `node:20-slim` |
+| Bash | `bash:5.2` |
+
+### How it works
+
+```
+Toggle ON
+    └─ DockerAvailability checks docker info (cached at startup)
+    └─ DockerImagePuller.pullAllAsync() pulls all 5 images in background
+           └─ skips images already in local cache
+           └─ status bar shows pull progress
+
+Run clicked (sandbox ON)
+    └─ RunRequest.sandboxed = true
+    └─ ExecutorFactory returns DockerSandboxExecutor (instead of native)
+    └─ DockerSandboxExecutor:
+           └─ writes code file to workDir
+           └─ builds: docker run --rm -i --network none --read-only
+                       --tmpfs /tmp:rw,exec,size=128m
+                       --memory {limit}m --memory-swap {limit}m
+                       --cpus 1.0 --pids-limit 50 --no-new-privileges
+                       -w /tmp -v <workDir>:/sandbox:ro
+                       <image> <language-command>
+           └─ stdout/stderr streamed back through existing callbacks
+           └─ TLE watchdog still enforced by BaseExecutor.runProcess()
+```
+
+### First-run note
+
+Images are pulled automatically when sandbox is first enabled. Total download is ~700 MB (one-time). Subsequent runs are instant — Docker uses the local image cache.
+
+---
+
 ## Chaos Monkey compatibility
 
 Code-cage is structurally compatible with Chaos Monkey testing. Because each run is a fully isolated OS process tracked in a shared `ObservableList<ProcessRecord>`, a Chaos Monkey service can:
