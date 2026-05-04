@@ -259,6 +259,10 @@
 }
 
 /* ===== Code Area (RichTextFX) ========================================== */
+.code-area .text {
+    -fx-fill: #d4d4d4;
+}
+
 .code-area {
     -fx-background-color: #1e1e1e;
     -fx-font-family: "JetBrains Mono", "Fira Code", "Consolas", monospace;
@@ -319,6 +323,18 @@
     -fx-font-size: 10px;
     -fx-font-weight: bold;
     -fx-padding: 4 8 4 8;
+}
+
+.text-area .text {
+    -fx-fill: #d4d4d4;
+}
+
+.output-area .text {
+    -fx-fill: #4ec9b0;
+}
+
+.error-area .text {
+    -fx-fill: #f44747;
 }
 
 .io-area {
